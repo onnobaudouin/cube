@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset=utf-8>
+    <title>Ping Pong Cube</title>
+    <style>
+        body {
+            margin: 0;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%
+        }
+
+        #info {
+            color: #FFF;
+            position: absolute;
+            top: 0px;
+            width: 100%;
+            padding: 15px;
+        }
+
+        a {
+            color: red;
+        }
+    </style>
+    <script src="js/three.js"></script>
+    <script src="js/OrbitControls.js"></script>
+    <script src="js/chroma.min.js"></script>
+</head>
+<body>
+<div id="info">
+    Examples of possible Cube interactions<br/>
+    press SPACEBAR: toggle between FIRE / SNOW (wait till it builds a bit), press C: clear cube of content, Mouse Drag:
+    rotate around, press + / - speed up <br/>
+    play with code to change cube size, etc...<br/>
+    Made with <a href="http://threejs.org" target="_blank" rel="noopener">three.js</a>, <a
+        href="https://github.com/gka/chroma.js/" target="_blank" rel="noopener">chroma.js</a>
+</div>
+<script>
+    //CONVERTED FROM:
+    //https://gist.github.com/yamamushi/5823518
+    function Bresenham3D(x1, y1, z1, x2, y2, z2, output, symbol) {
+
+        let i, dx, dy, dz, l, m, n, x_inc, y_inc, z_inc, err_1, err_2, dx2, dy2, dz2;
+        let point = new Array(3);
+
+        point[0] = x1;
+        point[1] = y1;
+        point[2] = z1;
+        dx = x2 - x1;
+        dy = y2 - y1;
+        dz = z2 - z1;
+        x_inc = (dx < 0) ? -1 : 1;
+        l = Math.abs(dx);
+        y_inc = (dy < 0) ? -1 : 1;
+        m = Math.abs(dy);
+        z_inc = (dz < 0) ? -1 : 1;
+        n = Math.abs(dz);
+        dx2 = l << 1;
+        dy2 = m << 1;
+        dz2 = n << 1;
+
+        if ((l >= m) && (l >= n)) {
+            err_1 = dy2 - l;
+            err_2 = dz2 - l;
+            for (i = 0; i < l; i++) {
+                output.set(point[0], point[1], point[2], symbol);
+
+                if (err_1 > 0) {
+                    point[1] += y_inc;
+                    err_1 -= dx2;
+                }
+                if (err_2 > 0) {
+                    point[2] += z_inc;
+                    err_2 -= dx2;
+                }
+                err_1 += dy2;
+                err_2 += dz2;
+                point[0] += x_inc;
+            }
+        } else if ((m >= l) && (m >= n)) {
+            err_1 = dx2 - m;
+            err_2 = dz2 - m;
+            for (i = 0; i < m; i++) {
+                output.set(point[0], point[1], point[2], symbol);
+
+                if (err_1 > 0) {
+                    point[0] += x_inc;
+                    err_1 -= dy2;
+                }
+                if (err_2 > 0) {
+                    point[2] += z_inc;
+                    err_2 -= dy2;
+                }
+                err_1 += dx2;
+                err_2 += dz2;
+                point[1] += y_inc;
+            }
+        } else {
+            err_1 = dy2 - n;
+            err_2 = dx2 - n;
+            for (i = 0; i < n; i++) {
+                output.set(point[0], point[1], point[2], symbol);
+
+                if (err_1 > 0) {
+                    point[1] += y_inc;
+                    err_1 -= dz2;
+                }
+                if (err_2 > 0) {
+                    point[0] += x_inc;
+                    err_2 -= dz2;
+                }
+                err_1 += dy2;
+                err_2 += dx2;
+                point[2] += z_inc;
+            }
+        }
+
+        output.set(point[0], point[1], point[2], symbol);
+    }
+
+    class Point3D {
+        constructor(x, y, z) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+    }
+
+    class Data3D {
+        constructor(sizePerEdge, sizeY = null, sizeX = null, sizeZ = null) {
+            this.sizePerEdge = sizePerEdge;
+
+            this.sizeX = sizeX;
+            if (sizeX === null) {
+                this.sizeX = this.sizePerEdge;
+            }
+
+            this.sizeY = sizeY;
+            if (sizeY === null) {
+                this.sizeY = this.sizePerEdge;
+            }
+
+            this.sizeZ = sizeZ;
+            if (sizeZ === null) {
+                this.sizeZ = this.sizePerEdge;
+            }
+
+            this.size = this.sizeX * this.sizeY * this.sizeZ;
+            this.zMultiplier = this.sizeX * this.sizeY;
+            this.yMultiplier = this.sizeX;
+
+            this.data = new Array(this.size);
+
+            this.clear();
+        }
+
+        clear() {
+            for (let i = 0; i < this.size; i++) {
+                this.data[i] = this.nullElement();
+            }
+        }
+
+        index(x, y, z) {
+            return x + y * this.yMultiplier + z * this.zMultiplier;
+        }
+
+        indexModular(x,y,z) {
+            return (((x % this.sizeX) + this.sizeX) % this.sizeX) +
+                (((y % this.sizeY) + this.sizeY) % this.sizeY) * this.yMultiplier +
+                (((z % this.sizeZ) + this.sizeZ) % this.sizeZ) * this.zMultiplier;
+
+        }
+        setIndex(index, obj) {
+            this.data[index] = obj;
+        }
+        getIndex(index) {
+            return this.data[index];
+        }
+        set(x, y, z, obj) {
+            this.data[x + y * this.yMultiplier + z * this.zMultiplier] = obj;
+        }
+
+        get(x, y, z) {
+            return this.data[x + y * this.yMultiplier + z * this.zMultiplier];
+        }
+
+        nullElement(x, y, z) {
+            return null;
+        }
+
+        mod(n, m) {
+            return ((n % m) + m) % m;
+        }
+
+        getModular(x, y, z) {
+          //  return this.get(this.mod(x, this.sizeX), this.mod(y, this.sizeY), this.mod(z, this.sizeZ));
+            return this.data[(((x % this.sizeX) + this.sizeX) % this.sizeX) +
+            (((y % this.sizeY) + this.sizeY) % this.sizeY) * this.yMultiplier +
+            (((z % this.sizeZ) + this.sizeZ) % this.sizeZ) * this.zMultiplier];
+        }
+
+        setModular(x, y, z, obj) {
+            this.data[(((x % this.sizeX) + this.sizeX) % this.sizeX) +
+            (((y % this.sizeY) + this.sizeY) % this.sizeY) * this.yMultiplier +
+            (((z % this.sizeZ) + this.sizeZ) % this.sizeZ) * this.zMultiplier] = obj;
+            //this.set(this.mod(x, this.sizeX), this.mod(y, this.sizeY), this.mod(z, this.sizeZ), obj);
+        }
+    }
+
+    class Cube extends Data3D {
+        constructor(sizePerEdge) {
+            super(sizePerEdge);
+        }
+
+        nullElement() {
+            return {r: 0, g: 0, b: 0};
+        }
+
+        line(from, to, color) {
+            Bresenham3D(from.x, from.y, from.z, to.x, to.y, to.z, this, color);
+        }
+
+        outlines(color = {r: 1, g: 0, b: 0}) {
+            const e = this.sizePerEdge - 1;
+            this.line(new Point3D(0, 0, 0), new Point3D(0, e, 0), color);
+            this.line(new Point3D(0, 0, 0), new Point3D(0, 0, e), color);
+            this.line(new Point3D(0, 0, 0), new Point3D(e, 0, 0), color);
+            this.line(new Point3D(e, 0, 0), new Point3D(e, e, 0), color);
+
+            this.line(new Point3D(0, e, 0), new Point3D(e, e, 0), color);
+            this.line(new Point3D(0, e, 0), new Point3D(0, e, e), color);
+            this.line(new Point3D(e, e, 0), new Point3D(e, e, e), color);
+            this.line(new Point3D(0, e, e), new Point3D(e, e, e), color);
+
+            this.line(new Point3D(e, 0, 0), new Point3D(e, 0, e), color);
+            this.line(new Point3D(0, 0, e), new Point3D(e, 0, e), color);
+
+            this.line(new Point3D(0, 0, e), new Point3D(0, e, e), color);
+            this.line(new Point3D(e, 0, e), new Point3D(e, e, e), color);
+        }
+    }
+
+
+    class PhysicalCube extends Data3D {
+        constructor(sizePerEdge, distanceBetween, ballResolution = 20) {
+            super(sizePerEdge);
+            this.distanceBetween = distanceBetween;
+            const geometry = new THREE.SphereGeometry(1, ballResolution, ballResolution);
+            const jigginess = 0.1;
+            const centeringOffset = -((sizePerEdge - 1) * this.distanceBetween) / 2.0;
+
+            for (let x = 0; x < this.sizePerEdge; x++) {
+                for (let y = 0; y < this.sizePerEdge; y++) {
+                    for (let z = 0; z < this.sizePerEdge; z++) {
+                        let material = new THREE.MeshStandardMaterial(
+                            {
+                                color: new THREE.Color(1, 1, 1),
+                                emissive: new THREE.Color(0, 0, 0), //LED inside
+                                emissiveIntensity: 1.0,
+                                transparent: true,
+                                opacity: 0.9,
+                                depthTest: true,
+                                depthWrite: true,
+                                metalness: 0.2,
+                                roughness: 0.6,
+                                //blending: THREE["AdditiveBlending"]
+                            }
+                        );
+                        let mesh = new THREE.Mesh(geometry, material);
+                        mesh.position.x = x * this.distanceBetween + centeringOffset + ((Math.random() - 0.5) * jigginess);
+                        mesh.position.y = y * this.distanceBetween + centeringOffset + ((Math.random() - 0.5) * jigginess);
+                        mesh.position.z = -z * this.distanceBetween - centeringOffset + ((Math.random() - 0.5) * jigginess);
+                        mesh.updateMatrix();
+                        mesh.matrixAutoUpdate = false; //we don't move...
+                        this.set(x, y, z, {
+                            mesh,
+                            material
+                        });
+                    }
+                }
+            }
+        }
+
+        addToScene(scene) {
+            for (let x = 0; x < this.sizePerEdge; x++) {
+                for (let y = 0; y < this.sizePerEdge; y++) {
+                    for (let z = 0; z < this.sizePerEdge; z++) {
+                        scene.add(this.get(x, y, z).mesh);
+                    }
+                }
+            }
+        }
+
+        draw(cube) {
+            if (cube.sizePerEdge !== this.sizePerEdge) {
+                console.log('Must have same dimensions');
+                return;
+            }
+            for (let x = 0; x < size; x++) {
+                for (let y = 0; y < size; y++) {
+                    for (let z = 0; z < size; z++) {
+                        let color = cube.get(x, y, z);
+                        let led = this.get(x, y, z).material;
+                        led.emissive.r = color.r;
+                        led.emissive.g = color.g;
+                        led.emissive.b = color.b;
+
+                        //don't draw ball at all if no color...
+                        const intensity = color.r + color.g + color.b;
+                        if (intensity > 0) {
+                            led.opacity = 0.9;
+                        } else {
+                            led.opacity = 0;
+                        }
+
+                    }
+                }
+            }
+        }
+    }
+
+    class SnowEffect extends Data3D {
+        constructor(cube) {
+            super(cube.sizePerEdge);
+            this.FALLING = 1;
+            this.LANDED = 2;
+            this.STABLE = 3;
+
+            this.palette = this.createPalette(this.sizePerEdge);
+
+            this.stableOffsets = [
+                [-1, -1], [0, -1], [1, -1],
+                [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]
+            ];
+
+            this.clear();
+            this.randomTop();
+        }
+
+        createPalette(size) {
+            let palette = new Array(size);
+            let colorScale = chroma.scale(['010101', '1E4D79', '1D88B6', '01AFD6', 'white']).domain(
+                [0.0, 1.0]).correctLightness();
+
+            for (let x = 0; x < size; x++) {
+                let rgb = colorScale(1 - (x / (size - 1))).rgb();
+                palette[x] = new THREE.Color(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255);
+            }
+            return palette;
+
+        }
+
+        randomTop() {
+            const targetY = this.sizePerEdge - 1;
+            /*
+            //drop in center
+                         if (Math.random() > 0.9) {
+                             this.set(Math.floor(this.sizePerEdge) / 2.0, targetY, Math.floor(this.sizePerEdge) / 2.0, {
+                                 state: this.FALLING
+
+                             });
+                         }
+              return;*/
+
+            for (let x = 0; x < this.sizePerEdge; x++) {
+                for (let z = 0; z < this.sizePerEdge; z++) {
+                    let probability = 1;
+                    if (Math.random() > 0.998) {
+                        if (Math.random() < probability) {
+                            this.set(x, targetY, z, {
+                                state: this.FALLING
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        process() {
+            const size = this.stableOffsets.length;
+            let unstableIndices = new Array(size);
+
+            for (let y = 0; y < this.sizePerEdge; y++) { //bottom to top.
+                for (let x = 0; x < this.sizePerEdge; x++) {
+                    for (let z = 0; z < this.sizePerEdge; z++) {
+                        let elem = this.get(x, y, z);
+                        if (elem) {
+                            if (elem.state === this.STABLE) {
+                                continue;
+                            }
+                            if (y === 0) {
+                                elem.state = this.STABLE;
+                                continue;
+                            }
+                            let below = this.get(x, y - 1, z);
+                            if (below === null) {
+                                elem.state = this.FALLING;
+                            } else {
+                                elem.state = this.LANDED;
+                            }
+                            let clear = false;
+                            switch (elem.state) {
+                                case this.FALLING:
+                                    this.set(x, y - 1, z, elem);
+                                    clear = true;
+                                    break;
+                                case this.LANDED:
+                                    //determine stability
+                                    let stableCount = 0;
+                                    let unstableIndex = 0;
+                                    let superStableCount = 0;
+                                    for (let i = 0; i < size; i++) {
+                                        let offset = this.stableOffsets[i];
+                                        let stable = this.getModular(x + offset[0], y - 1, z + +offset[1]);
+                                        if (stable) {
+                                            stableCount++;
+                                            if (stable.state === this.STABLE) {
+                                                superStableCount++;
+                                            }
+                                        } else {
+                                            unstableIndices[unstableIndex] = i;
+                                            unstableIndex++;
+                                        }
+                                    }
+                                    if (stableCount === size) {
+                                        if (superStableCount === size) {
+                                            elem.state = this.STABLE;
+                                        }
+                                        continue;
+                                    } else {
+                                        //we move it into one of the possible downwards... but not always to create more natureal collapses
+                                        if (Math.random() > 0.75) {
+                                            let index = unstableIndices[Math.round(Math.random() * (unstableIndex - 1))];
+                                            let offset = this.stableOffsets[index];
+                                            this.setModular(x + offset[0], y - 1, z + offset[1], elem);
+                                            clear = true;
+                                        }
+
+                                    }
+                                    break;
+                            } //switch STATE
+                            if (clear) {
+                                this.set(x, y, z, null); //clear
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        update() {
+            this.randomTop();
+            this.process();
+        }
+
+        draw(cube) {
+            const clear = new THREE.Color(0, 0, 0);
+            const flake = new THREE.Color(0.9, 0.9, 1.0);
+
+            const stable = new THREE.Color(1.0, 0, 0);
+            const landed = new THREE.Color(0, 0.7, 0);
+
+            //calculate depth of the ice pack.
+            for (let x = 0; x < this.sizePerEdge; x++) {
+                for (let z = 0; z < this.sizePerEdge; z++) {
+                    let depth = 0;
+                    for (let y = this.sizePerEdge - 1; y >= 0; y--) {
+                        let has = this.get(x, y, z);
+                        if (has && has.state === this.STABLE) {
+                            has.depth = depth;
+                            depth = depth + 1;
+                        }
+                    }
+                }
+            }
+
+            //now plot colours to our 'canvas'
+            for (let x = 0; x < this.sizePerEdge; x++) {
+                for (let y = 0; y < this.sizePerEdge; y++) {
+                    for (let z = 0; z < this.sizePerEdge; z++) {
+                        let has = this.get(x, y, z);
+                        let color = clear;
+                        if (has) {
+                            switch (has.state) {
+                                case this.FALLING:
+                                    color = flake;
+                                    break;
+                                case this.STABLE:
+                                    color = this.palette[has.depth];
+                                    break;
+                                case this.LANDED:
+                                    color = flake;
+                                    break;
+                            }
+                        }
+                        cube.set(x, y, z, color);
+                    }
+                }
+            }
+        }
+
+
+    }
+
+    //BASED ON... https://lodev.org/cgtutor/fire.html
+    class FireEffect extends Data3D {
+        constructor(cube) {
+            super(cube.sizePerEdge, cube.sizePerEdge + 2);
+            this.palette = this.createPalette(256);
+            this.randomBottom();
+        }
+
+        nullElement() {
+            return 0;
+        }
+
+        randomBottom() {
+            for (let x = 0; x < this.sizePerEdge; x++) {
+                for (let z = 0; z < this.sizePerEdge; z++) {
+                    this.set(x, 0, z, Math.random());
+                }
+            }
+        }
+
+        createPalette(size) {
+            let palette = new Array(size);
+            let colorScale = chroma.scale(['black', 'red', 'yellow', 'white']);//.correctLightness();
+            for (let x = 0; x < size; x++) {
+                let rgb = colorScale(x / (size - 1)).rgb();
+                palette[x] = new THREE.Color(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255);
+            }
+            return palette;
+        }
+
+
+        processFire() {
+            for (let y = this.sizeY - 1; y > 1; y--) { //per horizontal layer... top to bottom
+                for (let x = 0; x < this.sizePerEdge; x++) {
+                    for (let z = 0; z < this.sizePerEdge; z++) {
+                        let heat =
+                            this.get(x, y - 1, z) + //below
+                            this.getModular(x - 1, y - 1, z) * 0.991 + //below left
+                            this.getModular(x + 1, y - 1, z) * 0.998 + //below right
+                            this.getModular(x, y - 1, z - 1) * 0.997 + //front
+                            this.getModular(x, y - 1, z + 1) * 0.999 + //back
+                            this.get(x, y - 2, z) +  //below 2
+                            0;
+
+                        heat = heat / 6.9997; //dissipation factor
+                        //sparkles...
+                        if (y > 2) {
+                            if (heat > 0.042) {
+                                if (Math.random() > 0.995) {
+                                    heat = 1;
+                                }
+                            }
+                        }
+                        if (heat > 1.0) {
+                            heat = 1.0;
+                        }
+                        this.set(x, y, z, heat); //remember...
+                    }
+                }
+            }
+        }
+
+        update() {
+            this.randomBottom();
+            this.processFire();
+        }
+
+        draw(cube) {
+            let paletteSize = this.palette.length;
+            for (let x = 0; x < this.sizePerEdge; x++) {
+                for (let y = 0; y < this.sizePerEdge; y++) {
+                    for (let z = 0; z < this.sizePerEdge; z++) {
+                        let heat = this.get(x, y + 2, z);
+                        heat *= 2.0; //just to increase colours....
+
+                        if (heat > 1.0) {
+                            heat = 1.0;
+                        }
+                        if (heat < 0) {
+                            heat = 0;
+                        }
+                        const color = this.palette[Math.floor(heat * (paletteSize - 1))];
+                        cube.set(x, y, z, color);
+                    }
+                }
+            }
+        }
+    }
+
+
+    let camera, controls, scene, renderer;
+
+    const distanceBetweenBalls = 4;
+    const size = 16; //size of cube
+    let frame = 0;
+    let everyFrame = 2;
+
+    let physicalCube = null;
+    let cube = null;
+
+    let effects = [];
+    let effectIndex = 0;
+
+    init();
+    animate();
+
+    function init() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0.01, 0.01, 0.01);
+
+        renderer = new THREE.WebGLRenderer({antialias: true});
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 1000);
+        const distance = (distanceBetweenBalls * size) * 2.5;
+        camera.position.set(0, 0, distance);
+
+        controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true; // an animation loop is required when either damping or auto-rotation are enabled
+        controls.dampingFactor = 0.25;
+        controls.screenSpacePanning = false;
+        controls.minDistance = 1;
+        controls.maxDistance = 500;
+        controls.maxPolarAngle = Math.PI / 2;
+
+        let light = new THREE.DirectionalLight(new THREE.Color(0.3, 0.3, 0.3));
+        light.position.set(0.5, 0.5, -0.5);
+        scene.add(light);
+
+        physicalCube = new PhysicalCube(size, distanceBetweenBalls, 16);
+        physicalCube.addToScene(scene);
+
+        cube = new Cube(size);
+        let fireEffect = new FireEffect(cube);
+        let snowEffect = new SnowEffect(cube);
+
+        effects.push(fireEffect);
+        effects.push(snowEffect);
+
+        window.addEventListener('resize', onWindowResize, false);
+        window.addEventListener("keyup", onKeyUp, false);
+    }
+
+    function onKeyUp(event) {
+        console.log(event);
+        if (event.key === ' ') {
+            const size = effects.length;
+            effectIndex = (effectIndex + 1) % size;
+            console.log('effect: ', effectIndex);
+        }
+        if (event.key === 'c') {
+            effects[effectIndex].clear();
+        }
+        if(event.key === '-') {
+            everyFrame = Math.min(10, everyFrame + 1);
+        }
+        if(event.key === '+') {
+            everyFrame = Math.max(1, everyFrame - 1);
+        }
+
+
+    }
+
+    function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+        let red = new THREE.Color(0.5, 0, 0);
+
+        //every other frame only...
+        if (frame % everyFrame === 0) {
+            effects[effectIndex].update();
+            effects[effectIndex].draw(cube);
+            physicalCube.draw(cube);
+        }
+        frame = frame + 1;
+
+        controls.update();
+        render();
+    }
+
+    function render() {
+        renderer.render(scene, camera);
+    }
+
+</script>
+</body>
+</html>
